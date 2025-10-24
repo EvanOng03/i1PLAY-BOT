@@ -534,8 +534,11 @@ async def _persist_sent_messages(user_id: int, msgs: list):
         async with sent_messages_lock:
             if user_id not in user_sent_messages:
                 user_sent_messages[user_id] = []
+            tz8 = datetime.timezone(datetime.timedelta(hours=8))
+            timestamp_gmt8 = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).isoformat()
             for m in msgs:
                 m['timestamp'] = m.get('timestamp', timestamp)
+                m['timestamp_gmt8'] = m.get('timestamp_gmt8', timestamp_gmt8)
                 # 不强制写入 sender_user_id，避免详细列表总显示当前操作者；保留原始发起者信息（如有）
                 user_sent_messages[user_id].append(m)
             # 诊断日志：记录尝试持久化的用户与条数，以及前两条示例，便于定位写入失败或未触发的问题
