@@ -14,6 +14,7 @@ import re
 import html
 from collections import defaultdict, deque
 from dotenv import load_dotenv
+from db import load_json, save_json, firestore_enabled
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -256,40 +257,72 @@ def format_elapsed(elapsed_seconds: float) -> str:
 
 # 加载群组数据
 def load_groups():
+    if firestore_enabled():
+        data = load_json('groups', default=[])
+        if isinstance(data, list):
+            return data
     with open(GROUPS_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 # 保存群组数据
 def save_groups(groups):
+    if firestore_enabled():
+        ok = save_json('groups', groups)
+        if ok:
+            return
     with open(GROUPS_FILE, 'w', encoding='utf-8') as f:
         json.dump(groups, f, ensure_ascii=False, indent=2)
 
 # 加载分类数据
 def load_categories():
+    if firestore_enabled():
+        data = load_json('categories', default=[])
+        if isinstance(data, list):
+            return data
     with open(CATEGORIES_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 # 保存分类数据
 def save_categories(categories):
+    if firestore_enabled():
+        ok = save_json('categories', categories)
+        if ok:
+            return
     with open(CATEGORIES_FILE, 'w', encoding='utf-8') as f:
         json.dump(categories, f, ensure_ascii=False, indent=2)
 
 # 加载日志数据
 def load_logs():
+    if firestore_enabled():
+        data = load_json('logs', default=[])
+        if isinstance(data, list):
+            return data
     with open(LOGS_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 # 保存日志数据
 def save_logs(logs):
+    if firestore_enabled():
+        ok = save_json('logs', logs)
+        if ok:
+            return
     with open(LOGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(logs, f, ensure_ascii=False, indent=2)
 
 # 加载/保存 Bot 操作日志
 def load_botlog():
+    if firestore_enabled():
+        data = load_json('botlog', default=[])
+        if isinstance(data, list):
+            return data
     with open(BOTLOG_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def save_botlog(entries):
+    if firestore_enabled():
+        ok = save_json('botlog', entries)
+        if ok:
+            return
     with open(BOTLOG_FILE, 'w', encoding='utf-8') as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 
@@ -361,10 +394,18 @@ def summarize_messages_for_log(messages: list) -> str:
 
 # 加载/保存已发送消息（持久化）
 def load_sent_messages():
+    if firestore_enabled():
+        data = load_json('sent_messages', default={})
+        if isinstance(data, dict):
+            return data
     with open(SENT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def save_sent_messages(data):
+    if firestore_enabled():
+        ok = save_json('sent_messages', data)
+        if ok:
+            return
     with open(SENT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -5742,6 +5783,10 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =====================
 
 def load_scheduled_tasks():
+    if firestore_enabled():
+        data = load_json('scheduled_tasks', default=[])
+        if isinstance(data, list):
+            return data
     try:
         if not os.path.exists(SCHEDULED_TASKS_FILE):
             with open(SCHEDULED_TASKS_FILE, 'w', encoding='utf-8') as f:
@@ -5752,6 +5797,10 @@ def load_scheduled_tasks():
         return []
 
 def save_scheduled_tasks(tasks: list):
+    if firestore_enabled():
+        ok = save_json('scheduled_tasks', tasks)
+        if ok:
+            return
     try:
         with open(SCHEDULED_TASKS_FILE, 'w', encoding='utf-8') as f:
             json.dump(tasks, f, ensure_ascii=False, indent=2)
