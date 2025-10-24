@@ -7066,25 +7066,34 @@ async def main():
     except Exception:
         pass
 
-    # 加载已发送消息持久化数据并清理过期记录
+    # 后台预热：异步加载已发送消息持久化数据并清理过期记录，避免阻塞启动
     global user_sent_messages
+    async def _warm_sent_messages():
+        try:
+            loaded = load_sent_messages()
+            # 将键规范为整数，兼容JSON字符串键
+            tmp = {}
+            for k, v in loaded.items():
+                try:
+                    ik = int(k)
+                except Exception:
+                    ik = k
+                tmp[ik] = v
+            prune_sent_messages(tmp)
+            # 原子替换全局变量
+            user_sent_messages = tmp
+            # 保存清理后的结果，避免文件增长
+            save_sent_messages(user_sent_messages)
+            logger.info(f"后台预热 sent_messages 完成，users={len(user_sent_messages)}")
+        except Exception as e:
+            logger.error(f"后台预热 sent_messages 失败: {e}")
+    # 启动后台任务
     try:
-        loaded = load_sent_messages()
-        # 将键规范为整数，兼容JSON字符串键
-        user_sent_messages = {}
-        for k, v in loaded.items():
-            try:
-                ik = int(k)
-            except Exception:
-                ik = k
-            user_sent_messages[ik] = v
-        prune_sent_messages(user_sent_messages)
-        # 保存清理后的结果，避免文件增长
-        save_sent_messages(user_sent_messages)
-    except Exception as e:
-        logger.error(f"加载已发送消息失败，使用空数据: {e}")
-        user_sent_messages = {}
-    
+        asyncio.create_task(_warm_sent_messages())
+    except Exception:
+        # 兼容非事件循环上下文：延迟在应用启动后创建任务
+        pass
+
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
     # 记录启动时间用于 /status 运行时长（使用 bot_data 存储）
