@@ -4916,6 +4916,30 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 time_str = (timestamp[:16] if isinstance(timestamp, str) else '未知时间')
                 minutes_ago = 0
             
+            # 诊断：输出本批次的示例消息，便于确认 message 对象里是否包含 user_id / sender_user_id
+            try:
+                sample_msgs = []
+                for m in (msgs or [])[:2]:
+                    sample_msgs.append({
+                        'chat_id': m.get('chat_id'),
+                        'message_id': m.get('message_id'),
+                        'user_id': m.get('user_id'),
+                        'sender_user_id': m.get('sender_user_id'),
+                    })
+                logger.info(f"show_detailed_list: group_index={actual_index} timestamp={timestamp} sample_msgs={sample_msgs}")
+            except Exception:
+                pass
+            
+            # 汇总发起者id（优先 sender_user_id，再回退 user_id）
+            initiator_ids = set()
+            try:
+                for m in (msgs or []):
+                    sid = m.get('sender_user_id') or m.get('user_id')
+                    if sid is not None:
+                        initiator_ids.add(sid)
+            except Exception:
+                pass
+            
             group_ids = list({msg['chat_id'] for msg in msgs})
             group_count = len(group_ids)
             msg_count = len(msgs)
@@ -7006,6 +7030,26 @@ async def main():
     application.add_handler(CommandHandler("whitelist", manage_whitelist))
     application.add_handler(CommandHandler("blacklist", manage_blacklist))
     application.add_handler(CommandHandler("delete", delete_messages))
+    # 临时诊断：列出 Firestore 中以 prefix 开头的 sent_messages 文档（仅管理员可用）
+    async def diag_sent_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            uid = update.effective_user.id
+            if uid not in ADMIN_IDS:
+                await update.message.reply_text('仅管理员可用')
+                return
+            arg = None
+            if context.args:
+                arg = context.args[0]
+            prefix = arg or 'sent_messages_'
+            from db import list_document_ids_with_prefix
+            found = list_document_ids_with_prefix(prefix)
+            if found:
+                await update.message.reply_text(f'Found {len(found)} docs with prefix "{prefix}":\n' + '\n'.join(found))
+            else:
+                await update.message.reply_text(f'No docs with prefix "{prefix}"')
+        except Exception as e:
+            await update.message.reply_text(f'Diag failed: {e}')
+    application.add_handler(CommandHandler("diag_sent", diag_sent_messages))
     application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("tasks", list_tasks))
     application.add_handler(CommandHandler("list_tasks", list_tasks))
