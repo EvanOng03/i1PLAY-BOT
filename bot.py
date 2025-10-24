@@ -197,7 +197,22 @@ async def auto_prune_nonexistent_messages(update: Update, context: ContextTypes.
 # 数据文件路径
 # 使用脚本所在目录的绝对路径
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
+DEFAULT_DATA_DIR = os.path.join(SCRIPT_DIR, 'data')
+TMP_ROOT = os.getenv('CLOUD_RUN_TMP_DIR', '/tmp')
+TMP_DATA_DIR = os.path.join(TMP_ROOT, 'data')
+DATA_DIR = DEFAULT_DATA_DIR
+try:
+    os.makedirs(DEFAULT_DATA_DIR, exist_ok=True)
+    if not os.access(DEFAULT_DATA_DIR, os.W_OK):
+        raise PermissionError("DATA_DIR not writable")
+except Exception:
+    DATA_DIR = TMP_DATA_DIR
+    os.makedirs(DATA_DIR, exist_ok=True)
+    try:
+        logger.info(f"DATA_DIR 回退到临时目录: {DATA_DIR}")
+    except Exception:
+        pass
+
 GROUPS_FILE = os.path.join(DATA_DIR, 'groups.json')
 CATEGORIES_FILE = os.path.join(DATA_DIR, 'categories.json')
 LOGS_FILE = os.path.join(DATA_DIR, 'logs.json')
@@ -210,9 +225,6 @@ SCHEDULED_TASKS_FILE = os.path.join(DATA_DIR, 'scheduled_tasks.json')
 # 导出文件名配置（可在此修改导出文档名称）
 BOTLOG_EXPORT_PREFIX = 'botlog_export(i1PLAY)'
 BOTLOG_JSON_EXPORT_NAME = 'botlog(i1PLAY).json'
-
-# 确保数据目录存在
-os.makedirs(DATA_DIR, exist_ok=True)
 
 # 初始化数据文件
 def init_data_files():
@@ -306,6 +318,9 @@ def save_logs(logs):
         ok = save_json('logs', logs)
         if ok:
             return
+        logger.warning("Firestore 写入 logs 失败，回退到本地文件保存")
+    else:
+        logger.info("Firestore 未启用，logs 保存到本地文件")
     with open(LOGS_FILE, 'w', encoding='utf-8') as f:
         json.dump(logs, f, ensure_ascii=False, indent=2)
 
@@ -323,6 +338,9 @@ def save_botlog(entries):
         ok = save_json('botlog', entries)
         if ok:
             return
+        logger.warning("Firestore 写入 botlog 失败，回退到本地文件保存")
+    else:
+        logger.info("Firestore 未启用，botlog 保存到本地文件")
     with open(BOTLOG_FILE, 'w', encoding='utf-8') as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 
@@ -405,40 +423,50 @@ def load_sent_messages():
     with open(SENT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
-# 将用户消息列表分片写入 Firestore，避免单文档过大
-def _save_user_messages_sharded(user_id: int, messages: list):
+# 将用户消息列表分片写入 Firestore，避免单文档过大（返回写入是否成功）
+def _save_user_messages_sharded(user_id: int, messages: list) -> bool:
     try:
         import json as _json
         base_id = f"sent_messages_{user_id}"
         blob = _json.dumps(messages, ensure_ascii=False)
         # 约束：单文档控制在 ~900KB 以内
         if len(blob.encode('utf-8')) <= 900_000:
-            save_json(base_id, messages)
-            return
+            ok = save_json(base_id, messages)
+            return bool(ok)
         # 分片写入（每块500条，可按需调整）
         chunk_size = 500
+        all_ok = True
         for idx in range(0, len(messages), chunk_size):
             part = messages[idx: idx + chunk_size]
             part_id = f"{base_id}_part_{idx // chunk_size:04d}"
-            save_json(part_id, part)
+            ok = save_json(part_id, part)
+            all_ok = all_ok and bool(ok)
+        return all_ok
     except Exception:
         # 兜底：尽力写入主文档
-        save_json(f"sent_messages_{user_id}", messages)
+        ok = save_json(f"sent_messages_{user_id}", messages)
+        return bool(ok)
 
 
 def save_sent_messages(data):
     if firestore_enabled():
         try:
             # 按用户ID分片写入，解决单文档体积限制
+            all_ok = True
             for uid_str, msgs in (data or {}).items():
                 try:
                     uid = int(uid_str)
                 except Exception:
                     uid = uid_str
-                _save_user_messages_sharded(uid, msgs)
-            return
-        except Exception:
-            pass
+                ok = _save_user_messages_sharded(uid, msgs)
+                all_ok = all_ok and bool(ok)
+            if all_ok:
+                return
+            logger.warning("部分用户消息写入 Firestore 失败，回退到本地文件")
+        except Exception as e:
+            logger.error(f"保存 sent_messages 到 Firestore 失败，回退到本地文件: {e}")
+    else:
+        logger.info("Firestore 未启用，sent_messages 保存到本地文件")
     with open(SENT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
@@ -6783,6 +6811,10 @@ async def _send_messages_to_groups(bot, messages: list, target_groups: list, mer
 async def main():
     # 初始化数据文件
     init_data_files()
+    try:
+        logger.info(f"启动持久化配置: DATA_DIR={DATA_DIR}, Firestore={'启用' if firestore_enabled() else '未启用'}, project_id={os.getenv('GOOGLE_CLOUD_PROJECT') or os.getenv('GCLOUD_PROJECT')}, tmp_root={os.getenv('CLOUD_RUN_TMP_DIR','/tmp')}")
+    except Exception:
+        pass
 
     # 加载已发送消息持久化数据并清理过期记录
     global user_sent_messages
