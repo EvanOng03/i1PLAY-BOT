@@ -6,15 +6,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Copy entire project
-COPY . /app
-
-# Install dependencies from project root
+# Leverage Docker layer caching: install deps first
+COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+
+# Copy project source
+COPY . /app
 
 # Optional: Cloud Run uses this port, though the bot does not listen
 ENV PORT=8080
 
-# Start via entrypoint to ensure health server starts before bots
+# Start via entrypoint to ensure health server starts before bot
 CMD ["python", "entrypoint.py"]
