@@ -28,8 +28,12 @@ def _get_client():
         return None
     try:
         from google.cloud import firestore
-        # Project ID will be detected from environment/metadata automatically
-        _client = firestore.Client()
+        database_id = os.getenv("FIRESTORE_DATABASE_ID", "(default)").strip() or "(default)"
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT")
+        if project_id:
+            _client = firestore.Client(project=project_id, database=database_id)
+        else:
+            _client = firestore.Client(database=database_id)
         return _client
     except Exception as e:
         logger.error(f"初始化 Firestore 客户端失败: {e}", exc_info=True)
