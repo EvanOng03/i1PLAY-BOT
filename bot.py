@@ -5086,7 +5086,8 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 InlineKeyboardButton("👁️ 全预览选中", callback_data="preview_selected_batches")
             ])
         
-        # 分页按钮
+        # 分页按钮（诊断：记录分页状态以排查按钮不出现的原因）
+        logger.info(f"detailed_list pagination: page={page} total_groups={len(message_groups)} start_idx={start_idx} end_idx={end_idx}")
         nav_buttons = []
         if page > 0:
             nav_buttons.append(InlineKeyboardButton("⬅️ 上一页", callback_data=f"page_{page - 1}"))
