@@ -70,13 +70,17 @@ def load_json(doc_name: str, default: Any):
     """
     ref = _doc_ref(doc_name)
     if not ref:
+        logger.debug(f"load_json: Firestore disabled or client unavailable for doc '{doc_name}'")
         return default
     try:
         snap = ref.get()
         if not snap.exists:
+            logger.debug(f"load_json: document '{doc_name}' not found in Firestore")
             return default
         data = snap.to_dict() or {}
-        return data.get("content", default)
+        content = data.get("content", default)
+        logger.debug(f"load_json: loaded doc '{doc_name}' from Firestore, content_type={type(content)}")
+        return content
     except Exception as e:
         logger.error(f"读取 Firestore 文档 '{doc_name}' 失败: {e}", exc_info=True)
         return default
@@ -136,6 +140,7 @@ def save_json(doc_name: str, content: Any) -> bool:
 def list_document_ids_with_prefix(prefix: str) -> list:
     client = _get_client()
     if not client:
+        logger.debug(f"list_document_ids_with_prefix: Firestore client unavailable for prefix='{prefix}'")
         return []
     try:
         collection = os.getenv("FIRESTORE_COLLECTION", "bot_i1play")
@@ -144,6 +149,7 @@ def list_document_ids_with_prefix(prefix: str) -> list:
             doc_id = getattr(snap, "id", None)
             if isinstance(doc_id, str) and doc_id.startswith(prefix):
                 ids.append(doc_id)
+        logger.debug(f"list_document_ids_with_prefix: found {len(ids)} docs with prefix '{prefix}'")
         return ids
     except Exception as e:
         logger.error(f"列出 Firestore 文档前缀 '{prefix}' 失败: {e}", exc_info=True)
