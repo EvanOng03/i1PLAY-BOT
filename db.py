@@ -66,6 +66,39 @@ def load_json(doc_name: str, default: Any):
         return default
 
 
+# 规范化待写入的数据：递归将 dict 的键转换为字符串
+def _normalize_for_firestore(value: Any) -> Any:
+    try:
+        if isinstance(value, dict):
+            normalized = {}
+            for k, v in value.items():
+                sk = str(k) if k is not None else ""
+                # Firestore 字段名不能为空，必要时用占位符兜底
+                if not sk:
+                    sk = "_"
+                normalized[sk] = _normalize_for_firestore(v)
+            return normalized
+        if isinstance(value, list):
+            return [_normalize_for_firestore(v) for v in value]
+        # 常见原子类型直接返回
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        # datetime 转字符串（ISO8601）
+        if isinstance(value, datetime.datetime):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        # 其他类型：字符串表示兜底
+        return str(value)
+    except Exception:
+        # 任何异常情况下，回退为字符串
+        try:
+            return str(value)
+        except Exception:
+            return None
+
+
 def save_json(doc_name: str, content: Any) -> bool:
     """Write JSON-able content into Firestore. Returns True on success.
     """
@@ -73,8 +106,9 @@ def save_json(doc_name: str, content: Any) -> bool:
     if not ref:
         return False
     try:
+        normalized_content = _normalize_for_firestore(content)
         ref.set({
-            "content": content,
+            "content": normalized_content,
             "updated_at": datetime.datetime.utcnow().isoformat() + "Z",
             "schema": "json",
             "version": 1,
