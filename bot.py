@@ -6640,7 +6640,28 @@ async def _send_messages_to_groups(bot, messages: list, target_groups: list, mer
                     for i, message in enumerate(messages):
                         if i > 0:
                             await rate_limiter.wait_if_needed(group['chat_id'])
-                        sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                        # 类型分发，避免依赖原消息存在
+                        msg_type = message.get('type')
+                        sent_msg = None
+                        try:
+                            if msg_type == 'text':
+                                text = (message.get('text') or message.get('content') or '')
+                                if text:
+                                    sent_msg = await bot.send_message(chat_id=group['chat_id'], text=text)
+                                else:
+                                    sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                            elif msg_type == 'photo' and message.get('file_id'):
+                                sent_msg = await bot.send_photo(chat_id=group['chat_id'], photo=message['file_id'], caption=message.get('caption'))
+                            elif msg_type == 'video' and message.get('file_id'):
+                                sent_msg = await bot.send_video(chat_id=group['chat_id'], video=message['file_id'], caption=message.get('caption'))
+                            elif msg_type == 'document' and message.get('file_id'):
+                                sent_msg = await bot.send_document(chat_id=group['chat_id'], document=message['file_id'], caption=message.get('caption'))
+                            else:
+                                # 回退：未知类型或缺少 file_id 时按原消息复制
+                                sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                        except Exception:
+                            # 回退：若发送接口异常，尝试复制原消息
+                            sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
                         record = {'chat_id': group['chat_id'], 'message_id': sent_msg.message_id, 'user_id': user_id, 'timestamp': batch_ts}
                         group_sent_messages.append(record)
                         await _persist_sent_messages(user_id, [record])
@@ -6669,7 +6690,26 @@ async def _send_messages_to_groups(bot, messages: list, target_groups: list, mer
                     for i, message in enumerate(messages):
                         if i > 0:
                             await rate_limiter.wait_if_needed(group['chat_id'])
-                        sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                        # 合并模式但不满足媒体条件时，逐条按类型发送
+                        msg_type = message.get('type')
+                        sent_msg = None
+                        try:
+                            if msg_type == 'text':
+                                text = (message.get('text') or message.get('content') or '')
+                                if text:
+                                    sent_msg = await bot.send_message(chat_id=group['chat_id'], text=text)
+                                else:
+                                    sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                            elif msg_type == 'photo' and message.get('file_id'):
+                                sent_msg = await bot.send_photo(chat_id=group['chat_id'], photo=message['file_id'], caption=message.get('caption'))
+                            elif msg_type == 'video' and message.get('file_id'):
+                                sent_msg = await bot.send_video(chat_id=group['chat_id'], video=message['file_id'], caption=message.get('caption'))
+                            elif msg_type == 'document' and message.get('file_id'):
+                                sent_msg = await bot.send_document(chat_id=group['chat_id'], document=message['file_id'], caption=message.get('caption'))
+                            else:
+                                sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
+                        except Exception:
+                            sent_msg = await bot.copy_message(chat_id=group['chat_id'], from_chat_id=message['chat_id'], message_id=message['message_id'])
                         record = {'chat_id': group['chat_id'], 'message_id': sent_msg.message_id, 'user_id': user_id, 'timestamp': batch_ts}
                         group_sent_messages.append(record)
                         await _persist_sent_messages(user_id, [record])
