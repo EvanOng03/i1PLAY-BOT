@@ -31,11 +31,26 @@ def _get_client():
         from google.cloud import firestore
         database_id = os.getenv("FIRESTORE_DATABASE_ID", "(default)").strip() or "(default)"
         project_id = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GCLOUD_PROJECT")
-        if project_id:
-            _client = firestore.Client(project=project_id, database=database_id)
-        else:
-            _client = firestore.Client(database=database_id)
-        return _client
+        try:
+            if project_id:
+                _client = firestore.Client(project=project_id, database=database_id)
+            else:
+                _client = firestore.Client(database=database_id)
+            return _client
+        except Exception as e:
+            logger.error(f"初始化 Firestore 客户端失败: {e}", exc_info=True)
+            # 如果设置了非默认数据库，尝试回退到默认数据库
+            if database_id != "(default)":
+                try:
+                    logger.warning("尝试回退到默认数据库 '(default)' 以继续写入")
+                    if project_id:
+                        _client = firestore.Client(project=project_id, database="(default)")
+                    else:
+                        _client = firestore.Client(database="(default)")
+                    return _client
+                except Exception as e2:
+                    logger.error(f"默认数据库回退也失败: {e2}", exc_info=True)
+            return None
     except Exception as e:
         logger.error(f"初始化 Firestore 客户端失败: {e}", exc_info=True)
         return None
@@ -66,17 +81,14 @@ def load_json(doc_name: str, default: Any):
         logger.error(f"读取 Firestore 文档 '{doc_name}' 失败: {e}", exc_info=True)
         return default
 
+# 规范化为可写入 Firestore 的内容
+# 复杂类型统一转字符串，datetime 转 ISO8601
 
-# 规范化待写入的数据：递归将 dict 的键转换为字符串
-def _normalize_for_firestore(value: Any) -> Any:
+def _normalize_for_firestore(value: Any):
     try:
         if isinstance(value, dict):
             normalized = {}
-            for k, v in value.items():
-                sk = str(k) if k is not None else ""
-                # Firestore 字段名不能为空，必要时用占位符兜底
-                if not sk:
-                    sk = "_"
+            for sk, v in value.items():
                 normalized[sk] = _normalize_for_firestore(v)
             return normalized
         if isinstance(value, list):
@@ -120,6 +132,7 @@ def save_json(doc_name: str, content: Any) -> bool:
         return False
 
 # 列出集合中以指定前缀开头的文档ID
+
 def list_document_ids_with_prefix(prefix: str) -> list:
     client = _get_client()
     if not client:
@@ -138,6 +151,7 @@ def list_document_ids_with_prefix(prefix: str) -> list:
 
 # 读取以 base_name 开头的分片文档并聚合返回
 # 例如 base_name='sent_messages'，会聚合 'sent_messages_<uid>' 与 'sent_messages_<uid>_part_*'
+
 def load_json_sharded(base_name: str) -> Any:
     # 先尝试加载主文档（若存在且是 dict，则纳入聚合）
     combined = {}
