@@ -149,7 +149,7 @@ def list_document_ids_with_prefix(prefix: str) -> list:
             doc_id = getattr(snap, "id", None)
             if isinstance(doc_id, str) and doc_id.startswith(prefix):
                 ids.append(doc_id)
-        logger.debug(f"list_document_ids_with_prefix: found {len(ids)} docs with prefix '{prefix}'")
+        logger.debug(f"list_document_ids_with_prefix: found {len(ids)} docs with prefix '{prefix}' -> {ids}")
         return ids
     except Exception as e:
         logger.error(f"列出 Firestore 文档前缀 '{prefix}' 失败: {e}", exc_info=True)
