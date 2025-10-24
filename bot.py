@@ -449,6 +449,11 @@ def _save_user_messages_sharded(user_id: int, messages: list) -> bool:
 
 
 def save_sent_messages(data):
+    """
+    保存 sent_messages：优先尝试写入 Firestore；为保证在启用 Firestore 时也能在容器内保留本地副本，
+    我们将始终把数据写到本地 `SENT_MESSAGES_FILE`（作为副本），除非明确禁用。
+    """
+    wrote_to_firestore = False
     if firestore_enabled():
         try:
             # 按用户ID分片写入，解决单文档体积限制
@@ -461,14 +466,21 @@ def save_sent_messages(data):
                 ok = _save_user_messages_sharded(uid, msgs)
                 all_ok = all_ok and bool(ok)
             if all_ok:
-                return
-            logger.warning("部分用户消息写入 Firestore 失败，回退到本地文件")
+                wrote_to_firestore = True
+            else:
+                logger.warning("部分用户消息写入 Firestore 失败，仍写入本地文件作为副本")
         except Exception as e:
             logger.error(f"保存 sent_messages 到 Firestore 失败，回退到本地文件: {e}")
     else:
         logger.info("Firestore 未启用，sent_messages 保存到本地文件")
-    with open(SENT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    # 始终写本地副本，确保 send_messages.json 在容器或共享存储中可见（便于排查/备份）
+    try:
+        with open(SENT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Wrote local SENT_MESSAGES_FILE ({SENT_MESSAGES_FILE}), firestore_ok={wrote_to_firestore}")
+    except Exception as e:
+        logger.error(f"写入本地 sent_messages 文件失败: {e}")
 
 def prune_sent_messages(data: dict, minutes: int = None, max_per_user: int = None):
     """保留全部发送记录，不做时间或数量限制。
