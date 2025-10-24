@@ -4991,11 +4991,11 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text += f'{actual_index + 1}. {time_str} ({minutes_ago}分钟前)\n'
             text += f'   📊 {group_count}个群组，{msg_count}条消息\n'
             
-            # 标题行：群组/分类/私聊（优先显示发起者信息，如可解析）
-            # 简化逻辑以避免复杂嵌套导致语法/逻辑问题
+            # 标题行：群组/分类/私聊（仅在“私聊批次”显示发起者信息；群组批次优先显示群组）
             display_initiator = None
+            is_private_batch = (group_count == 1 and group_ids and group_ids[0] > 0)
             try:
-                if initiator_ids:
+                if is_private_batch and initiator_ids:
                     rep = next(iter(initiator_ids))
                     # 尝试解析用户名
                     uinfo = user_cache.get(str(rep))
