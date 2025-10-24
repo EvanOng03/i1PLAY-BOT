@@ -497,6 +497,15 @@ async def _persist_sent_messages(user_id: int, msgs: list):
                 m['timestamp'] = m.get('timestamp', timestamp)
                 m['sender_user_id'] = user_id
                 user_sent_messages[user_id].append(m)
+            # 诊断日志：记录尝试持久化的用户与条数，以及前两条示例，便于定位写入失败或未触发的问题
+            try:
+                sample = user_sent_messages[user_id][-2:]
+            except Exception:
+                sample = msgs[:2]
+            try:
+                logger.info(f"_persist_sent_messages user={user_id} total_after={len(user_sent_messages.get(user_id, []))} adding={len(msgs)} sample={sample}")
+            except Exception:
+                logger.info(f"_persist_sent_messages user={user_id} adding={len(msgs)}")
             save_sent_messages(user_sent_messages)
     except Exception as e:
         logger.error(f"持久化已发送消息失败: {e}")
