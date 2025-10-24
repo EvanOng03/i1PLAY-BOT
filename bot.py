@@ -501,7 +501,9 @@ async def _persist_sent_messages(user_id: int, msgs: list):
     将补充 timestamp 与 sender_user_id 字段，并写入 sent_messages.json。
     """
     try:
-        timestamp = datetime.datetime.now().isoformat()
+        # 使用 GMT+8 时间显示，格式: YYYY-MM-DD HH:MM:SS.micro
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).strftime('%Y-%m-%d %H:%M:%S.%f')
         async with sent_messages_lock:
             if user_id not in user_sent_messages:
                 user_sent_messages[user_id] = []
@@ -4454,19 +4456,40 @@ async def delete_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # 进入删除流程时清空上次多选的批次选择
     context.user_data.pop('selected_batches', None)
     
-    # 聚合所有用户的已发送消息
+    # 尝试从已启用的持久化（可能为 Firestore 的分片文档）重新加载最新的 sent_messages
     all_messages = []
-    for msgs in user_sent_messages.values():
+    try:
+        if firestore_enabled():
+            try:
+                loaded = load_sent_messages() or {}
+                # 规范键为 int
+                temp = {}
+                for k, v in loaded.items():
+                    try:
+                        ik = int(k)
+                    except Exception:
+                        ik = k
+                    temp.setdefault(ik, []).extend(v or [])
+                msgs_source = temp
+            except Exception as e:
+                logger.warning(f"加载远程 sent_messages 失败，回退到内存数据: {e}")
+                msgs_source = user_sent_messages
+        else:
+            msgs_source = user_sent_messages
+    except Exception:
+        msgs_source = user_sent_messages
+
+    for msgs in (msgs_source or {}).values():
         if msgs:
             all_messages.extend(msgs)
-    
+
     if not all_messages:
         await update.message.reply_text('❌ 没有找到可删除的消息。')
         return
-    
+
     # 不限制时间窗口，包含所有已发送记录
     recent_messages = all_messages[:]
-    
+
     if not recent_messages:
         await update.message.reply_text('❌ 没有找到可删除的消息。')
         return
