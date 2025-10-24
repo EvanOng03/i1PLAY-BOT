@@ -827,6 +827,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         )
 
 def load_whitelist():
+    # 优先从 Firestore 读取（如果启用），否则回退到本地文件
+    if firestore_enabled():
+        try:
+            data = load_json('whitelist', default=None)
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
     try:
         with open(WHITELIST_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -835,6 +843,15 @@ def load_whitelist():
 
 # 保存白名单数据
 def save_whitelist(whitelist):
+    # 优先写入 Firestore（若启用），失败或未启用时写本地文件
+    if firestore_enabled():
+        try:
+            ok = save_json('whitelist', whitelist)
+            if ok:
+                return
+            logger.warning('Firestore 写入 whitelist 失败，回退到本地文件')
+        except Exception as e:
+            logger.error(f'写入 whitelist 到 Firestore 失败: {e}')
     with open(WHITELIST_FILE, 'w', encoding='utf-8') as f:
         json.dump(whitelist, f, ensure_ascii=False, indent=2)
 
@@ -4462,6 +4479,7 @@ async def delete_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if firestore_enabled():
             try:
                 loaded = load_sent_messages() or {}
+                logger.info(f"delete_messages: loaded sent_messages from Firestore, keys_count={len(loaded) if hasattr(loaded, 'keys') else 0}")
                 # 规范键为 int
                 temp = {}
                 for k, v in loaded.items():
@@ -4471,17 +4489,22 @@ async def delete_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         ik = k
                     temp.setdefault(ik, []).extend(v or [])
                 msgs_source = temp
+                logger.info(f"delete_messages: msgs_source keys sample={list(msgs_source.keys())[:5]}")
             except Exception as e:
                 logger.warning(f"加载远程 sent_messages 失败，回退到内存数据: {e}")
                 msgs_source = user_sent_messages
         else:
+            logger.info("delete_messages: Firestore 未启用，使用内存 user_sent_messages")
             msgs_source = user_sent_messages
-    except Exception:
+    except Exception as e:
+        logger.error(f"delete_messages: 检查持久化数据时发生异常: {e}")
         msgs_source = user_sent_messages
 
     for msgs in (msgs_source or {}).values():
         if msgs:
             all_messages.extend(msgs)
+
+    logger.info(f"delete_messages: total aggregated messages={len(all_messages)} from source={'firestore' if firestore_enabled() else 'memory'}")
 
     if not all_messages:
         await update.message.reply_text('❌ 没有找到可删除的消息。')
