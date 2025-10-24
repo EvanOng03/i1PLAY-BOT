@@ -16,5 +16,5 @@ RUN python -m pip install --no-cache-dir --upgrade pip && \
 # Optional: Cloud Run uses this port, though the bot does not listen
 ENV PORT=8080
 
-# Start via entrypoint to ensure health server starts before bot
+# Start via entrypoint to ensure health server starts before bots
 CMD ["python", "entrypoint.py"]
