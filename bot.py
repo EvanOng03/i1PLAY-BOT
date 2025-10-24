@@ -6701,6 +6701,35 @@ async def _send_messages_to_groups(bot, messages: list, target_groups: list, mer
 async def main():
     # 初始化数据文件
     init_data_files()
+
+    # 先启动健康检查 HTTP 服务器，使 Cloud Run 立即检测到端口监听
+    try:
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                try:
+                    if self.path in ('/', '/healthz', '/_ah/health'):
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+                        self.end_headers()
+                        self.wfile.write(b'OK')
+                    else:
+                        self.send_response(404)
+                        self.end_headers()
+                except Exception:
+                    pass
+            def log_message(self, format, *args):
+                return
+
+        port = int(os.getenv('PORT', '8080'))
+        server = HTTPServer(('0.0.0.0', port), HealthHandler)
+        threading.Thread(target=server.serve_forever, daemon=False).start()
+        logger.info(f"Health server listening on 0.0.0.0:{port}")
+    except Exception as e:
+        logger.error(f"启动健康检查服务失败: {e}")
+
     # 加载已发送消息持久化数据并清理过期记录
     global user_sent_messages
     try:
@@ -6918,6 +6947,8 @@ async def main():
     # 首次恢复与启动后台监控
     await resume_pending_tasks_once()
     asyncio.create_task(monitor_pending_tasks())
+
+    # 健康检查服务已在 main() 开头启动，避免重复启动
 
     logger.info("Bot started")
 
