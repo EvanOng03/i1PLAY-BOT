@@ -4965,89 +4965,91 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             text += f'   📊 {group_count}个群组，{msg_count}条消息\n'
             
             # 标题行：群组/分类/私聊（优先显示发起者信息，如可解析）
+            # 简化逻辑以避免复杂嵌套导致语法/逻辑问题
+            display_initiator = None
             try:
-                # 优先尝试显示本批次的发起者（sender_user_id / user_id）
-                display_initiator = None
-                try:
-                    if initiator_ids:
-                        # 取第一个发起者作为代表
-                        rep = next(iter(initiator_ids))
-                        # 尝试从缓存或通过 API 获取用户名/姓名
-                        uinfo = user_cache.get(str(rep))
-                        if not uinfo:
-                            try:
-                                uchat = await context.bot.get_chat(rep)
-                                uinfo = {
-                                    'first_name': getattr(uchat, 'first_name', None),
-                                    'last_name': getattr(uchat, 'last_name', None),
-                                    'username': getattr(uchat, 'username', None)
-                                }
-                                user_cache[str(rep)] = uinfo
-                            except Exception:
-                                uinfo = None
-                        if uinfo:
-                            uname = uinfo.get('username')
-                            if uname:
-                                display_initiator = f"由 @{uname} 发起"
-                            else:
-                                name = f"{uinfo.get('first_name') or ''} {uinfo.get('last_name') or ''}".strip() or str(rep)
-                                display_initiator = f"由 {name}({rep}) 发起"
+                if initiator_ids:
+                    rep = next(iter(initiator_ids))
+                    # 当发现第一个发起者为当前操作者时尝试挑选其他发起者
+                    if rep == update.effective_user.id and len(initiator_ids) > 1:
+                        for cand in initiator_ids:
+                            if cand != update.effective_user.id:
+                                rep = cand
+                                break
+                    # 尝试解析用户名
+                    uinfo = user_cache.get(str(rep))
+                    if not uinfo:
+                        try:
+                            uchat = await context.bot.get_chat(rep)
+                            uinfo = {
+                                'first_name': getattr(uchat, 'first_name', None),
+                                'last_name': getattr(uchat, 'last_name', None),
+                                'username': getattr(uchat, 'username', None),
+                                'is_bot': getattr(uchat, 'is_bot', False)
+                            }
+                            user_cache[str(rep)] = uinfo
+                        except Exception:
+                            uinfo = None
+                    if uinfo:
+                        if uinfo.get('username'):
+                            display_initiator = f"由 @{uinfo.get('username')} 发起"
                         else:
-                            display_initiator = f"由 {rep} 发起"
-                except Exception:
-                    display_initiator = None
-
-                try:
-                    if display_initiator:
-                        # 若发起者就是当前操作者本人则不显示为发起者，回退到群组/分类显示
-                        rep_val = rep if 'rep' in locals() else None
-                        if rep_val is not None and rep_val == update.effective_user.id:
-                            raise ValueError('initiator_is_self')
-                        text += f'    {display_initiator}\n'
+                            name = (uinfo.get('first_name') or '') + ' ' + (uinfo.get('last_name') or '')
+                            name = name.strip() or str(rep)
+                            bot_marker = ' (机器人)' if uinfo.get('is_bot') else ''
+                            display_initiator = f"由 {name}{bot_marker}({rep}) 发起"
                     else:
-                        # 无法解析发起者，回退到群组/分类显示
-                        if group_count == 1:
-                            gid = group_ids[0]
-                            if gid is not None and gid > 0:
-                                # 私聊：补全用户信息
-                                uinfo = user_cache.get(str(gid))
-                                if not uinfo:
-                                    try:
-                                        chat = await context.bot.get_chat(gid)
-                                        uinfo = {
-                                            'first_name': getattr(chat, 'first_name', None),
-                                            'last_name': getattr(chat, 'last_name', None),
-                                            'username': getattr(chat, 'username', None)
-                                        }
-                                        user_cache[str(gid)] = uinfo
-                                    except Exception:
-                                        uinfo = {}
-                                first = (uinfo.get('first_name') or '')
-                                last = (uinfo.get('last_name') or '')
-                                full_name = f"{first} {last}".strip() or '用户'
-                                uname = uinfo.get('username')
-                                uname_str = f'@{uname}' if uname else '无用户名'
-                                text += f'    {full_name} | {uname_str} | {gid}\n'
-                            else:
-                                # 单群组
-                                gname = group_name_map.get(gid) or (f"群组 {gid}" if gid is not None else "群组")
-                                text += f'    {gname} | {gid}\n'
-                        elif group_count > 1:
-                            # 分类名称匹配（优先精确等于，其次全部共享）
-                            batch_set = set(group_ids)
-                            exact = None
-                            shared = []
-                            for cat, ids in categories_map.items():
-                                if ids == batch_set:
-                                    exact = cat
-                                    break
-                                if batch_set.issubset(ids):
-                                    shared.append((cat, len(ids)))
-                            if exact:
-                                text += f'    {exact}\n'
-                            elif shared:
-                                shared.sort(key=lambda x: x[1])
-                                text += f'    {shared[0][0]}\n'
+                        # 无法解析 username，则以 id 显示（若为当前操作者则回退）
+                        if rep != update.effective_user.id:
+                            display_initiator = f"由 {rep} 发起"
+            except Exception:
+                display_initiator = None
+
+            if display_initiator:
+                text += f'    {display_initiator}\n'
+            else:
+                # 回退到群组/分类显示（原有行为）
+                try:
+                    if group_count == 1:
+                        gid = group_ids[0]
+                        if gid is not None and gid > 0:
+                            # 私聊：补全用户信息
+                            uinfo = user_cache.get(str(gid))
+                            if not uinfo:
+                                try:
+                                    chat = await context.bot.get_chat(gid)
+                                    uinfo = {
+                                        'first_name': getattr(chat, 'first_name', None),
+                                        'last_name': getattr(chat, 'last_name', None),
+                                        'username': getattr(chat, 'username', None)
+                                    }
+                                    user_cache[str(gid)] = uinfo
+                                except Exception:
+                                    uinfo = {}
+                            first = (uinfo.get('first_name') or '')
+                            last = (uinfo.get('last_name') or '')
+                            full_name = f"{first} {last}".strip() or '用户'
+                            uname = uinfo.get('username')
+                            uname_str = f'@{uname}' if uname else '无用户名'
+                            text += f'    {full_name} | {uname_str} | {gid}\n'
+                        else:
+                            gname = group_name_map.get(gid) or (f"群组 {gid}" if gid is not None else "群组")
+                            text += f'    {gname} | {gid}\n'
+                    elif group_count > 1:
+                        batch_set = set(group_ids)
+                        exact = None
+                        shared = []
+                        for cat, ids in categories_map.items():
+                            if ids == batch_set:
+                                exact = cat
+                                break
+                            if batch_set.issubset(ids):
+                                shared.append((cat, len(ids)))
+                        if exact:
+                            text += f'    {exact}\n'
+                        elif shared:
+                            shared.sort(key=lambda x: x[1])
+                            text += f'    {shared[0][0]}\n'
                 except Exception:
                     pass
 
