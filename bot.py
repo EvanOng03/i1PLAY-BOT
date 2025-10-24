@@ -5000,13 +5000,18 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         if uinfo.get('username'):
                             display_initiator = f"由 @{uinfo.get('username')} 发起"
                         else:
-                            name = (uinfo.get('first_name') or '') + ' ' + (uinfo.get('last_name') or '')
-                            name = name.strip() or str(rep)
+                            first = (uinfo.get('first_name') or '').strip()
+                            last = (uinfo.get('last_name') or '').strip()
+                            name = (first + (' ' + last if last else '')).strip()
+                            # 避免显示 "由 None 发起"
+                            if not name:
+                                name = str(rep) if rep is not None else ''
                             bot_marker = ' (机器人)' if uinfo.get('is_bot') else ''
-                            display_initiator = f"由 {name}{bot_marker}({rep}) 发起"
+                            if name:
+                                display_initiator = f"由 {name}{bot_marker}{f'({rep})' if rep is not None else ''} 发起"
                     else:
-                        # 无法解析 username，则以 id 显示（若为当前操作者则回退）
-                        if rep != update.effective_user.id:
+                        # 无法解析 username，则以 id 显示（若为当前操作者或 rep 为空则回退）
+                        if (rep is not None) and (rep != update.effective_user.id):
                             display_initiator = f"由 {rep} 发起"
             except Exception:
                 display_initiator = None
