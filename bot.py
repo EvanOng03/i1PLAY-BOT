@@ -4998,11 +4998,20 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     display_initiator = None
 
                 if display_initiator:
-                    text += f'    {display_initiator}\n'
-                else:
-                    # 无法解析发起者，回退到群组/分类显示
-                    if group_count == 1:
-                        gid = group_ids[0]
+                    try:
+                        # 若发起者就是当前操作者本人，回退显示群组/来源信息，以避免全部条目显示为自己
+                        rep_val = None
+                        try:
+                            rep_val = rep if 'rep' in locals() else None
+                        except Exception:
+                            rep_val = None
+                        if rep_val is not None and rep_val == update.effective_user.id:
+                            raise ValueError('initiator_is_self')
+                        text += f'    {display_initiator}\n'
+                    except Exception:
+                        # 回退到群组/分类显示
+                        if group_count == 1:
+                            gid = group_ids[0]
                         if gid is not None and gid > 0:
                             # 私聊：补全用户信息
                             uinfo = user_cache.get(str(gid))
