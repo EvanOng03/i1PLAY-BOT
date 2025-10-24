@@ -4,6 +4,7 @@
 import os
 import datetime
 import logging
+import json
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -117,3 +118,64 @@ def save_json(doc_name: str, content: Any) -> bool:
     except Exception as e:
         logger.error(f"写入 Firestore 文档 '{doc_name}' 失败: {e}", exc_info=True)
         return False
+
+# 列出集合中以指定前缀开头的文档ID
+def list_document_ids_with_prefix(prefix: str) -> list:
+    client = _get_client()
+    if not client:
+        return []
+    try:
+        collection = os.getenv("FIRESTORE_COLLECTION", "bot_i1play")
+        ids = []
+        for snap in client.collection(collection).stream():
+            doc_id = getattr(snap, "id", None)
+            if isinstance(doc_id, str) and doc_id.startswith(prefix):
+                ids.append(doc_id)
+        return ids
+    except Exception as e:
+        logger.error(f"列出 Firestore 文档前缀 '{prefix}' 失败: {e}", exc_info=True)
+        return []
+
+# 读取以 base_name 开头的分片文档并聚合返回
+# 例如 base_name='sent_messages'，会聚合 'sent_messages_<uid>' 与 'sent_messages_<uid>_part_*'
+def load_json_sharded(base_name: str) -> Any:
+    # 先尝试加载主文档（若存在且是 dict，则纳入聚合）
+    combined = {}
+    base_data = load_json(base_name, default=None)
+    if isinstance(base_data, dict):
+        combined.update(base_data)
+    # 收集所有分片文档
+    prefix = f"{base_name}_"
+    ids = list_document_ids_with_prefix(prefix)
+    # 将分片按 <key> 分组
+    shards = {}
+    for doc_id in ids:
+        rest = doc_id[len(prefix):]
+        key = rest.split("_part_", 1)[0]
+        shards.setdefault(key, []).append(doc_id)
+    # 逐个 key 聚合分片
+    for key, doc_ids in shards.items():
+        # 单文档（无 _part_ 后缀）直接读取
+        if len(doc_ids) == 1 and "_part_" not in doc_ids[0]:
+            val = load_json(doc_ids[0], default=None)
+            if val is not None:
+                combined[key] = val
+            continue
+        # 多分片：按文档ID排序并拼接为列表
+        parts = []
+        for doc_id in sorted(doc_ids):
+            part = load_json(doc_id, default=None)
+            if isinstance(part, list):
+                parts.extend(part)
+            elif isinstance(part, dict) and "__string__" in part:
+                try:
+                    decoded = json.loads(part["__string__"])
+                    if isinstance(decoded, list):
+                        parts.extend(decoded)
+                except Exception:
+                    pass
+            elif part is not None:
+                # 兜底：非列表数据直接附加
+                parts.append(part)
+        combined[key] = parts
+    return combined
