@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*
+# -*- coding: utf-8 -*-
 
 import os
 import json
@@ -482,6 +482,11 @@ def save_sent_messages(data):
                 except Exception:
                     uid = uid_str
                 attempted_uids.append(uid)
+                # 防御：uid 列表为空时不写入远端，避免“清空”历史；但仍写本地副本。
+                if not msgs:
+                    logger.info(f"save_sent_messages: skip Firestore write for user={uid} because msgs is empty; will still write local file")
+                    continue
+                logger.info(f"save_sent_messages: preparing to write user={uid} count={len(msgs)}")
                 ok = _save_user_messages_sharded(uid, msgs)
                 all_ok = all_ok and bool(ok)
             if all_ok:
@@ -500,7 +505,7 @@ def save_sent_messages(data):
                         from db import load_json as _load_json
                         data_back = _load_json(f"sent_messages_{sample_uid}", default=None)
                         if isinstance(data_back, list):
-                            logger.info(f"save_sent_messages: readback sent_messages_{sample_uid} -> list(len={len(data_back)})")
+                            logger.info(f"save_sent_messages: readback sent_messages_{sample_uid} -> list(len={len(data_back)}) first_ts={data_back[0].get('timestamp') if data_back else None}")
                         else:
                             logger.info(f"save_sent_messages: readback sent_messages_{sample_uid} -> type={type(data_back)}")
                     except Exception as _re:
@@ -7326,4 +7331,3 @@ async def main():
 if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
-
