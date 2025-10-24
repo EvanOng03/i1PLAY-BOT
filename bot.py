@@ -4565,12 +4565,15 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
         
         for i, (timestamp, msgs) in enumerate(quick_operations):
             try:
+                tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
-                now = datetime.datetime.now()
-                time_diff = now - dt
-                minutes_ago = int(time_diff.total_seconds() / 60)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=tz8)
+                dt8 = dt.astimezone(tz8)
+                now8 = datetime.datetime.now(tz8)
+                minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
                 time_str = f"{minutes_ago}分钟前"
-            except:
+            except Exception:
                 time_str = "未知时间"
             
             # 统计群组数量
@@ -4673,12 +4676,15 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     page_items = sorted_items[start_idx:end_idx]
     
     try:
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
         dt = datetime.datetime.fromisoformat(timestamp)
-        now = datetime.datetime.now()
-        time_diff = now - dt
-        minutes_ago = int(time_diff.total_seconds() / 60)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=tz8)
+        dt8 = dt.astimezone(tz8)
+        now8 = datetime.datetime.now(tz8)
+        minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
         time_str = f"{minutes_ago}分钟前"
-    except:
+    except Exception:
         time_str = "未知时间"
     
     text = f'🎯 **选择要删除的群组** ({time_str})\n\n'
@@ -4803,13 +4809,16 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             actual_index = start_idx + i
             
             try:
+                tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
-                time_str = dt.strftime('%m-%d %H:%M')
-                now = datetime.datetime.now()
-                time_diff = now - dt
-                minutes_ago = int(time_diff.total_seconds() / 60)
-            except:
-                time_str = timestamp[:16]
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=tz8)
+                dt8 = dt.astimezone(tz8)
+                time_str = dt8.strftime('%m-%d %H:%M')
+                now8 = datetime.datetime.now(tz8)
+                minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
+            except Exception:
+                time_str = (timestamp[:16] if isinstance(timestamp, str) else '未知时间')
                 minutes_ago = 0
             
             group_ids = list({msg['chat_id'] for msg in msgs})
