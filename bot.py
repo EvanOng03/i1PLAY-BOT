@@ -14,7 +14,7 @@ import re
 import html
 from collections import defaultdict, deque
 from dotenv import load_dotenv
-from db import load_json, save_json, firestore_enabled
+from db import load_json, save_json, firestore_enabled, load_json_sharded
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -395,17 +395,50 @@ def summarize_messages_for_log(messages: list) -> str:
 # 加载/保存已发送消息（持久化）
 def load_sent_messages():
     if firestore_enabled():
-        data = load_json('sent_messages', default={})
-        if isinstance(data, dict):
-            return data
+        try:
+            # 聚合读取分片文档：sent_messages_<uid> 与 sent_messages_<uid>_part_*
+            data = load_json_sharded('sent_messages')
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
     with open(SENT_MESSAGES_FILE, 'r', encoding='utf-8') as f:
         return json.load(f)
 
+# 将用户消息列表分片写入 Firestore，避免单文档过大
+def _save_user_messages_sharded(user_id: int, messages: list):
+    try:
+        import json as _json
+        base_id = f"sent_messages_{user_id}"
+        blob = _json.dumps(messages, ensure_ascii=False)
+        # 约束：单文档控制在 ~900KB 以内
+        if len(blob.encode('utf-8')) <= 900_000:
+            save_json(base_id, messages)
+            return
+        # 分片写入（每块500条，可按需调整）
+        chunk_size = 500
+        for idx in range(0, len(messages), chunk_size):
+            part = messages[idx: idx + chunk_size]
+            part_id = f"{base_id}_part_{idx // chunk_size:04d}"
+            save_json(part_id, part)
+    except Exception:
+        # 兜底：尽力写入主文档
+        save_json(f"sent_messages_{user_id}", messages)
+
+
 def save_sent_messages(data):
     if firestore_enabled():
-        ok = save_json('sent_messages', data)
-        if ok:
+        try:
+            # 按用户ID分片写入，解决单文档体积限制
+            for uid_str, msgs in (data or {}).items():
+                try:
+                    uid = int(uid_str)
+                except Exception:
+                    uid = uid_str
+                _save_user_messages_sharded(uid, msgs)
             return
+        except Exception:
+            pass
     with open(SENT_MESSAGES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
