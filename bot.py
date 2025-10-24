@@ -4997,65 +4997,60 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 except Exception:
                     display_initiator = None
 
-                if display_initiator:
-                    try:
-                        # 若发起者就是当前操作者本人，回退显示群组/来源信息，以避免全部条目显示为自己
-                        rep_val = None
-                        try:
-                            rep_val = rep if 'rep' in locals() else None
-                        except Exception:
-                            rep_val = None
+                try:
+                    if display_initiator:
+                        # 若发起者就是当前操作者本人则不显示为发起者，回退到群组/分类显示
+                        rep_val = rep if 'rep' in locals() else None
                         if rep_val is not None and rep_val == update.effective_user.id:
                             raise ValueError('initiator_is_self')
                         text += f'    {display_initiator}\n'
-                    except Exception:
-                        # 回退到群组/分类显示
+                    else:
+                        # 无法解析发起者，回退到群组/分类显示
                         if group_count == 1:
                             gid = group_ids[0]
-                        if gid is not None and gid > 0:
-                            # 私聊：补全用户信息
-                            uinfo = user_cache.get(str(gid))
-                            if not uinfo:
-                                try:
-                                    chat = await context.bot.get_chat(gid)
-                                    uinfo = {
-                                        'first_name': getattr(chat, 'first_name', None),
-                                        'last_name': getattr(chat, 'last_name', None),
-                                        'username': getattr(chat, 'username', None)
-                                    }
-                                    user_cache[str(gid)] = uinfo
-                                except Exception:
-                                    uinfo = {}
-                            first = (uinfo.get('first_name') or '')
-                            last = (uinfo.get('last_name') or '')
-                            full_name = f"{first} {last}".strip() or '用户'
-                            uname = uinfo.get('username')
-                            uname_str = f'@{uname}' if uname else '无用户名'
-                            text += f'    {full_name} | {uname_str} | {gid}\n'
-                        else:
-                            # 单群组
-                            gname = group_name_map.get(gid) or (f"群组 {gid}" if gid is not None else "群组")
-                            text += f'    {gname} | {gid}\n'
-                    elif group_count > 1:
-                        # 分类名称匹配（优先精确等于，其次全部共享）
-                        batch_set = set(group_ids)
-                        exact = None
-                        shared = []
-                        for cat, ids in categories_map.items():
-                            if ids == batch_set:
-                                exact = cat
-                                break
-                            if batch_set.issubset(ids):
-                                shared.append((cat, len(ids)))
-                        if exact:
-                            text += f'    {exact}\n'
-                        elif shared:
-                            shared.sort(key=lambda x: x[1])
-                            text += f'    {shared[0][0]}\n'
-                # 其余情况不添加标题
-            except Exception:
-                pass
-            
+                            if gid is not None and gid > 0:
+                                # 私聊：补全用户信息
+                                uinfo = user_cache.get(str(gid))
+                                if not uinfo:
+                                    try:
+                                        chat = await context.bot.get_chat(gid)
+                                        uinfo = {
+                                            'first_name': getattr(chat, 'first_name', None),
+                                            'last_name': getattr(chat, 'last_name', None),
+                                            'username': getattr(chat, 'username', None)
+                                        }
+                                        user_cache[str(gid)] = uinfo
+                                    except Exception:
+                                        uinfo = {}
+                                first = (uinfo.get('first_name') or '')
+                                last = (uinfo.get('last_name') or '')
+                                full_name = f"{first} {last}".strip() or '用户'
+                                uname = uinfo.get('username')
+                                uname_str = f'@{uname}' if uname else '无用户名'
+                                text += f'    {full_name} | {uname_str} | {gid}\n'
+                            else:
+                                # 单群组
+                                gname = group_name_map.get(gid) or (f"群组 {gid}" if gid is not None else "群组")
+                                text += f'    {gname} | {gid}\n'
+                        elif group_count > 1:
+                            # 分类名称匹配（优先精确等于，其次全部共享）
+                            batch_set = set(group_ids)
+                            exact = None
+                            shared = []
+                            for cat, ids in categories_map.items():
+                                if ids == batch_set:
+                                    exact = cat
+                                    break
+                                if batch_set.issubset(ids):
+                                    shared.append((cat, len(ids)))
+                            if exact:
+                                text += f'    {exact}\n'
+                            elif shared:
+                                shared.sort(key=lambda x: x[1])
+                                text += f'    {shared[0][0]}\n'
+                except Exception:
+                    pass
+
             text += '\n'
             
             # 操作行：全删 / 选择群组 / 预览 / 勾选
