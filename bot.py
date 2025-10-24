@@ -494,7 +494,7 @@ def save_sent_messages(data):
                 if attempted_uids:
                     sample_uid = attempted_uids[0]
                     found = list_document_ids_with_prefix(f"sent_messages_{sample_uid}")
-                    logger.debug(f"save_sent_messages: Firestore docs for sample user {sample_uid}: {found}")
+                    logger.info(f"save_sent_messages: Firestore docs for sample user {sample_uid}: {found}")
             except Exception:
                 pass
         except Exception as e:
