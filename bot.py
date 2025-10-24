@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*
 
 import os
 import json
@@ -7326,3 +7326,4 @@ async def main():
 if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
+
