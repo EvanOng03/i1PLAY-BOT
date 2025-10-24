@@ -425,35 +425,53 @@ def load_sent_messages():
 
 # 将用户消息列表分片写入 Firestore，避免单文档过大（返回写入是否成功）
 def _save_user_messages_sharded(user_id: int, messages: list) -> bool:
+    """Store per-user sent messages into Firestore using sharding when needed.
+    Adds diagnostic logging of payload size and written document ids.
+    Returns True when all writes succeeded.
+    """
     try:
         import json as _json
         base_id = f"sent_messages_{user_id}"
         blob = _json.dumps(messages, ensure_ascii=False)
+        payload_bytes = len(blob.encode('utf-8'))
+        logger.debug(f"_save_user_messages_sharded: user={user_id} payload_bytes={payload_bytes} items={len(messages)}")
         # 约束：单文档控制在 ~900KB 以内
-        if len(blob.encode('utf-8')) <= 900_000:
+        if payload_bytes <= 900_000:
             ok = save_json(base_id, messages)
+            logger.info(f"_save_user_messages_sharded: wrote single doc {base_id} -> {bool(ok)}")
             return bool(ok)
         # 分片写入（每块500条，可按需调整）
         chunk_size = 500
         all_ok = True
+        written_parts = []
         for idx in range(0, len(messages), chunk_size):
             part = messages[idx: idx + chunk_size]
             part_id = f"{base_id}_part_{idx // chunk_size:04d}"
             ok = save_json(part_id, part)
+            written_parts.append((part_id, bool(ok)))
             all_ok = all_ok and bool(ok)
+        logger.info(f"_save_user_messages_sharded: user={user_id} parts_written={written_parts}")
         return all_ok
-    except Exception:
+    except Exception as e:
+        logger.error(f"_save_user_messages_sharded: exception for user={user_id}: {e}", exc_info=True)
         # 兜底：尽力写入主文档
-        ok = save_json(f"sent_messages_{user_id}", messages)
-        return bool(ok)
+        try:
+            ok = save_json(f"sent_messages_{user_id}", messages)
+            logger.info(f"_save_user_messages_sharded: fallback single doc sent_messages_{user_id} -> {bool(ok)}")
+            return bool(ok)
+        except Exception as e2:
+            logger.error(f"_save_user_messages_sharded: fallback failed user={user_id}: {e2}", exc_info=True)
+            return False
 
 
 def save_sent_messages(data):
     """
     保存 sent_messages：优先尝试写入 Firestore；为保证在启用 Firestore 时也能在容器内保留本地副本，
     我们将始终把数据写到本地 `SENT_MESSAGES_FILE`（作为副本），除非明确禁用。
+    增加诊断日志，记录尝试写入的用户及 Firestore 中示例文档列表。
     """
     wrote_to_firestore = False
+    attempted_uids = []
     if firestore_enabled():
         try:
             # 按用户ID分片写入，解决单文档体积限制
@@ -463,14 +481,24 @@ def save_sent_messages(data):
                     uid = int(uid_str)
                 except Exception:
                     uid = uid_str
+                attempted_uids.append(uid)
                 ok = _save_user_messages_sharded(uid, msgs)
                 all_ok = all_ok and bool(ok)
             if all_ok:
                 wrote_to_firestore = True
+                logger.info(f"save_sent_messages: wrote all users to Firestore, users={attempted_uids}")
             else:
-                logger.warning("部分用户消息写入 Firestore 失败，仍写入本地文件作为副本")
+                logger.warning(f"save_sent_messages: some writes to Firestore failed, users={attempted_uids}")
+            # 诊断：列出样例用户在 Firestore 中的文档 id
+            try:
+                if attempted_uids:
+                    sample_uid = attempted_uids[0]
+                    found = list_document_ids_with_prefix(f"sent_messages_{sample_uid}")
+                    logger.debug(f"save_sent_messages: Firestore docs for sample user {sample_uid}: {found}")
+            except Exception:
+                pass
         except Exception as e:
-            logger.error(f"保存 sent_messages 到 Firestore 失败，回退到本地文件: {e}")
+            logger.error(f"保存 sent_messages 到 Firestore 失败，回退到本地文件: {e}", exc_info=True)
     else:
         logger.info("Firestore 未启用，sent_messages 保存到本地文件")
 
