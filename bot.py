@@ -537,7 +537,7 @@ async def _persist_sent_messages(user_id: int, msgs: list):
                 user_sent_messages[user_id] = []
             for m in msgs:
                 m['timestamp'] = m.get('timestamp', timestamp)
-                m['sender_user_id'] = user_id
+                # 不强制写入 sender_user_id，避免详细列表总显示当前操作者；保留原始发起者信息（如有）
                 user_sent_messages[user_id].append(m)
             # 诊断日志：记录尝试持久化的用户与条数，以及前两条示例，便于定位写入失败或未触发的问题
             try:
@@ -4870,6 +4870,9 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     groups_dict.setdefault(ts, []).append(msg)
                 sorted_groups = sorted(groups_dict.items(), reverse=True)
                 context.user_data['delete_message_groups'] = sorted_groups
+                # 重建后强制显示最新页
+                context.user_data['delete_page'] = 0
+                page = 0
                 message_groups = sorted_groups
         except Exception as e:
             logger.error(f"重建删除分组失败: {e}")
@@ -4970,14 +4973,17 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             try:
                 if initiator_ids:
                     rep = next(iter(initiator_ids))
-                    # 当发现第一个发起者为当前操作者时尝试挑选其他发起者
-                    if rep == update.effective_user.id and len(initiator_ids) > 1:
-                        for cand in initiator_ids:
-                            if cand != update.effective_user.id:
-                                rep = cand
-                                break
+                    # 若第一个发起者为当前操作者：若有其他候选用其他；否则回退到群组显示
+                    if rep == update.effective_user.id:
+                        if len(initiator_ids) > 1:
+                            for cand in initiator_ids:
+                                if cand != update.effective_user.id:
+                                    rep = cand
+                                    break
+                        else:
+                            rep = None
                     # 尝试解析用户名
-                    uinfo = user_cache.get(str(rep))
+                    uinfo = user_cache.get(str(rep)) if rep is not None else None
                     if not uinfo:
                         try:
                             uchat = await context.bot.get_chat(rep)
