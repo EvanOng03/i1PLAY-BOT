@@ -4834,16 +4834,33 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
 
 # 显示详细列表
 async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"show_detailed_list invoked; delete_message_groups_exists={ 'delete_message_groups' in context.user_data }")
     message_groups = context.user_data.get('delete_message_groups', [])
     page = context.user_data.get('delete_page', 0)
 
     # 当上下文中没有分组数据（例如机器人重启后点击旧按钮）时，回退到全局持久化数据重建分组
     if not message_groups:
         try:
+            # 尝试从内存再次构建
             all_messages = []
             for msgs in user_sent_messages.values():
                 if msgs:
                     all_messages.extend(msgs)
+            # 如果内存为空，尝试从持久化(可能为 Firestore)加载
+            if not all_messages:
+                try:
+                    loaded = load_sent_messages() or {}
+                    logger.info(f"show_detailed_list: loaded sent_messages from persistence, keys_count={len(loaded) if hasattr(loaded, 'keys') else 0}")
+                    for k, v in (loaded or {}).items():
+                        if v:
+                            # keys in loaded may be str; normalize
+                            try:
+                                ik = int(k)
+                            except Exception:
+                                ik = k
+                            all_messages.extend(v)
+                except Exception as le:
+                    logger.warning(f"show_detailed_list: load_sent_messages failed: {le}")
             if all_messages:
                 groups_dict = {}
                 for msg in all_messages:
