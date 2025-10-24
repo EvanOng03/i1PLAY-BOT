@@ -534,12 +534,13 @@ async def _persist_sent_messages(user_id: int, msgs: list):
         async with sent_messages_lock:
             if user_id not in user_sent_messages:
                 user_sent_messages[user_id] = []
+            # 同时记录 GMT+8 的时间，便于展示/诊断
             tz8 = datetime.timezone(datetime.timedelta(hours=8))
             timestamp_gmt8 = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).isoformat()
             for m in msgs:
                 m['timestamp'] = m.get('timestamp', timestamp)
                 m['timestamp_gmt8'] = m.get('timestamp_gmt8', timestamp_gmt8)
-                # 不强制写入 sender_user_id，避免详细列表总显示当前操作者；保留原始发起者信息（如有）
+                m['sender_user_id'] = user_id
                 user_sent_messages[user_id].append(m)
             # 诊断日志：记录尝试持久化的用户与条数，以及前两条示例，便于定位写入失败或未触发的问题
             try:
@@ -4986,17 +4987,8 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             try:
                 if initiator_ids:
                     rep = next(iter(initiator_ids))
-                    # 若第一个发起者为当前操作者：若有其他候选用其他；否则回退到群组显示
-                    if rep == update.effective_user.id:
-                        if len(initiator_ids) > 1:
-                            for cand in initiator_ids:
-                                if cand != update.effective_user.id:
-                                    rep = cand
-                                    break
-                        else:
-                            rep = None
                     # 尝试解析用户名
-                    uinfo = user_cache.get(str(rep)) if rep is not None else None
+                    uinfo = user_cache.get(str(rep))
                     if not uinfo:
                         try:
                             uchat = await context.bot.get_chat(rep)
@@ -5010,21 +5002,18 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         except Exception:
                             uinfo = None
                     if uinfo:
-                        if uinfo.get('username'):
-                            display_initiator = f"由 @{uinfo.get('username')} 发起"
-                        else:
-                            first = (uinfo.get('first_name') or '').strip()
-                            last = (uinfo.get('last_name') or '').strip()
-                            name = (first + (' ' + last if last else '')).strip()
-                            # 避免显示 "由 None 发起"
-                            if not name:
-                                name = str(rep) if rep is not None else ''
-                            bot_marker = ' (机器人)' if uinfo.get('is_bot') else ''
-                            if name:
-                                display_initiator = f"由 {name}{bot_marker}{f'({rep})' if rep is not None else ''} 发起"
+                        # 按“姓名 | @用户名 | 用户ID”格式显示（不再使用“由 @xxx 发起”）
+                        first = (uinfo.get('first_name') or '').strip()
+                        last = (uinfo.get('last_name') or '').strip()
+                        full_name = (first + (' ' + last if last else '')).strip()
+                        uname = uinfo.get('username')
+                        uname_str = f'@{uname}' if uname else '无用户名'
+                        uid_str = str(rep)
+                        bot_marker = ' (机器人)' if uinfo.get('is_bot') else ''
+                        display_initiator = f"{full_name or '用户'}{bot_marker} | {uname_str} | {uid_str}"
                     else:
-                        # 无法解析 username，则以 id 显示（若为当前操作者或 rep 为空则回退）
-                        if (rep is not None) and (rep != update.effective_user.id):
+                        # 无法解析 username，则以 id 显示（若为当前操作者则回退）
+                        if rep != update.effective_user.id:
                             display_initiator = f"由 {rep} 发起"
             except Exception:
                 display_initiator = None
