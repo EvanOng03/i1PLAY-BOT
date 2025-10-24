@@ -47,16 +47,20 @@ def run_bot():
             env_keys = ['USE_FIRESTORE','FIRESTORE_DATABASE_ID','FIRESTORE_COLLECTION','GOOGLE_CLOUD_PROJECT','GCLOUD_PROJECT']
             for _k in env_keys:
                 logger.info(f"ENV {_k} = {_os.getenv(_k)}")
-            try:
-                from db import firestore_enabled, save_json
-                logger.info(f"firestore_enabled() -> {firestore_enabled()}")
+            # 非阻塞的 Firestore 诊断（限时）
+            def _diag_fs():
                 try:
-                    ok = save_json('diag_startup_entrypoint', {'ts': _os.environ.get('NOW', '') or 'startup', 'note': 'diag_startup'})
-                    logger.info(f"diag_startup_entrypoint save_json -> {ok}")
-                except Exception as _e:
-                    logger.exception(f"diag_startup save_json raised: {_e}")
-            except Exception as _e2:
-                logger.exception(f"import db diagnostics failed: {_e2}")
+                    from db import firestore_enabled, save_json
+                    logger.info(f"firestore_enabled() -> {firestore_enabled()}")
+                    try:
+                        ok = save_json('diag_startup_entrypoint', {'ts': _os.environ.get('NOW', '') or 'startup', 'note': 'diag_startup'})
+                        logger.info(f"diag_startup_entrypoint save_json -> {ok}")
+                    except Exception as _e:
+                        logger.exception(f"diag_startup save_json raised: {_e}")
+                except Exception as _e2:
+                    logger.exception(f"import db diagnostics failed: {_e2}")
+            t = threading.Thread(target=_diag_fs, daemon=True)
+            t.start()
         except Exception as _e:
             logger.exception(f"startup diagnostics failed: {_e}")
 
