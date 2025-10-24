@@ -495,6 +495,16 @@ def save_sent_messages(data):
                     sample_uid = attempted_uids[0]
                     found = list_document_ids_with_prefix(f"sent_messages_{sample_uid}")
                     logger.info(f"save_sent_messages: Firestore docs for sample user {sample_uid}: {found}")
+                    # 进一步读取样例用户文档，记录条目数量以诊断“被清空”问题
+                    try:
+                        from db import load_json as _load_json
+                        data_back = _load_json(f"sent_messages_{sample_uid}", default=None)
+                        if isinstance(data_back, list):
+                            logger.info(f"save_sent_messages: readback sent_messages_{sample_uid} -> list(len={len(data_back)})")
+                        else:
+                            logger.info(f"save_sent_messages: readback sent_messages_{sample_uid} -> type={type(data_back)}")
+                    except Exception as _re:
+                        logger.warning(f"save_sent_messages: readback failed for sent_messages_{sample_uid}: {_re}")
             except Exception:
                 pass
         except Exception as e:
