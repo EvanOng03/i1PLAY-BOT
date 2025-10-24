@@ -529,9 +529,8 @@ async def _persist_sent_messages(user_id: int, msgs: list):
     将补充 timestamp 与 sender_user_id 字段，并写入 sent_messages.json。
     """
     try:
-        # 使用 GMT+8 时间显示，格式: YYYY-MM-DD HH:MM:SS.micro
-        tz8 = datetime.timezone(datetime.timedelta(hours=8))
-        timestamp = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).strftime('%Y-%m-%d %H:%M:%S.%f')
+        # 统一持久化为 ISO8601 UTC（带偏移），例如 2025-10-24T02:07:02.487679+00:00；展示时再转换到 GMT+8
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
         async with sent_messages_lock:
             if user_id not in user_sent_messages:
                 user_sent_messages[user_id] = []
@@ -4868,7 +4867,17 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     if not ts:
                         continue
                     groups_dict.setdefault(ts, []).append(msg)
-                sorted_groups = sorted(groups_dict.items(), reverse=True)
+                # 以时间排序分组，兼容旧数据无 tzinfo 的情况（视为 UTC）
+                def _key_dt(kv):
+                    ts = kv[0]
+                    try:
+                        dt = datetime.datetime.fromisoformat(ts)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=datetime.timezone.utc)
+                        return dt
+                    except Exception:
+                        return ts
+                sorted_groups = sorted(groups_dict.items(), key=_key_dt, reverse=True)
                 context.user_data['delete_message_groups'] = sorted_groups
                 # 重建后强制显示最新页
                 context.user_data['delete_page'] = 0
@@ -4926,8 +4935,9 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             try:
                 tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
+                # 若无 tzinfo（旧数据），视为 UTC 再转 GMT+8
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=tz8)
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
                 dt8 = dt.astimezone(tz8)
                 time_str = dt8.strftime('%m-%d %H:%M')
                 now8 = datetime.datetime.now(tz8)
