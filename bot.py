@@ -586,7 +586,7 @@ async def _persist_sent_messages(user_id: int, msgs: list):
             if user_id not in user_sent_messages:
                 user_sent_messages[user_id] = []
             # 同时记录 GMT+8 的时间，便于展示/诊断
-            tz8 = datetime.timezone(datetime.timedelta(hours=8))
+            tz8 = _dt.timezone(_dt.timedelta(hours=8))
             timestamp_gmt8 = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).isoformat()
             for m in msgs:
                 m['timestamp'] = m.get('timestamp', timestamp)
@@ -1007,7 +1007,7 @@ def require_permission(func):
                     command = m.group(0) if m else raw_text
                 else:
                     command = '未知'
-                tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                tz8 = _dt.timezone(_dt.timedelta(hours=8))
                 now_local = datetime.datetime.now(datetime.timezone.utc).astimezone(tz8).strftime('%Y/%m/%d %H:%M:%S')
                 # 写入操作记录（不记录原始文本）
                 try:
@@ -2477,10 +2477,12 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # 时间基准（使用本地 naive 时间，兼容现有 JSON 存储）
-    now_naive = datetime.datetime.now()
+    import datetime as _dt  # 防止局部变量遮蔽全局 datetime 模块
+    datetime = _dt  # 统一本函数内对 datetime 的引用，避免 UnboundLocalError
+    now_naive = _dt.datetime.now()
 
     # 解析查询日期范围（默认 GMT+8 当天 00:00:00 ~ 23:59:59）
-    tz8 = datetime.timezone(datetime.timedelta(hours=8))
+    tz8 = _dt.timezone(_dt.timedelta(hours=8))
     args = getattr(context, 'args', []) or []
     # 更稳健的范围解析：先移除 metrics=...，再剔除图片开关
     arg_str_all = ' '.join(args or [])
@@ -2888,8 +2890,8 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         st = context.application.bot_data.get('start_time')
         if st:
-            st2 = st.replace(tzinfo=datetime.timezone.utc) if getattr(st, 'tzinfo', None) is None else st
-            now = datetime.datetime.now(datetime.timezone.utc)
+            st2 = st.replace(tzinfo=_dt.timezone.utc) if getattr(st, 'tzinfo', None) is None else st
+            now = _dt.datetime.now(_dt.timezone.utc)
             delta = now - st2
             total = int(delta.total_seconds())
             d = total // 86400
@@ -4745,7 +4747,7 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
         
         for i, (timestamp, msgs) in enumerate(quick_operations):
             try:
-                tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                tz8 = _dt.timezone(_dt.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=tz8)
@@ -4856,7 +4858,7 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     page_items = sorted_items[start_idx:end_idx]
     
     try:
-        tz8 = datetime.timezone(datetime.timedelta(hours=8))
+        tz8 = _dt.timezone(_dt.timedelta(hours=8))
         dt = datetime.datetime.fromisoformat(timestamp)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=tz8)
@@ -5019,7 +5021,7 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             actual_index = start_idx + i
             
             try:
-                tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                tz8 = _dt.timezone(_dt.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
                 # 若无 tzinfo（旧数据），视为 UTC 再转 GMT+8
                 if dt.tzinfo is None:
@@ -6173,7 +6175,7 @@ async def list_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("当前没有待执行的定时任务或计时任务。")
         return
 
-    tz8 = datetime.timezone(datetime.timedelta(hours=8))
+    tz8 = _dt.timezone(_dt.timedelta(hours=8))
 
     # 统计
     total = len(display_tasks)
@@ -6694,7 +6696,7 @@ async def _execute_scheduled_task(application: Application, task: dict):
                             if task.get('created_at_utc'):
                                 cdt = cdt.replace(tzinfo=datetime.timezone.utc)
                             else:
-                                tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                                tz8 = _dt.timezone(_dt.timedelta(hours=8))
                                 cdt = cdt.replace(tzinfo=tz8)
                         cdt_utc = cdt.astimezone(datetime.timezone.utc)
                         elapsed = (now_utc - cdt_utc).total_seconds()
@@ -7323,7 +7325,7 @@ async def main():
                         if task.get('created_at_utc'):
                             cdt = cdt.replace(tzinfo=datetime.timezone.utc)
                         else:
-                            tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                            tz8 = _dt.timezone(_dt.timedelta(hours=8))
                             cdt = cdt.replace(tzinfo=tz8)
                     cdt_utc = cdt.astimezone(datetime.timezone.utc)
                     elapsed = (now_utc - cdt_utc).total_seconds()
