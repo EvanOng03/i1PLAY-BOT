@@ -9,7 +9,12 @@ WORKDIR /app
 # Leverage Docker layer caching: install deps first
 COPY requirements.txt /app/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get update && apt-get install -y --no-install-recommends \
+      fonts-noto-cjk \
+      fonts-noto-color-emoji \
+      fonts-dejavu-core && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy project source
 COPY . /app
