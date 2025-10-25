@@ -4761,11 +4761,11 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
         
         for i, (timestamp, msgs) in enumerate(quick_operations):
             try:
-                tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=datetime.timezone.utc)
-                dt8 = dt.astimezone(tz8)
+                dt8 = dt.astimezone(tz8)\r
                 now8 = datetime.datetime.now(tz8)
                 minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
                 time_str = f"{minutes_ago}分钟前"
@@ -4777,7 +4777,7 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
                         first = msgs[0] or {}
                         ts_fallback = first.get('timestamp_gmt8') or first.get('timestamp')
                     if ts_fallback:
-                        tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                        tz8 = datetime.timezone(datetime.timedelta(hours=8))
                         dt = datetime.datetime.fromisoformat(ts_fallback)
                         if dt.tzinfo is None:
                             dt = dt.replace(tzinfo=datetime.timezone.utc)
@@ -4890,7 +4890,7 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
     page_items = sorted_items[start_idx:end_idx]
     
     try:
-        tz8 = _dt.timezone(_dt.timedelta(hours=8))
+        tz8 = datetime.timezone(datetime.timedelta(hours=8))
         dt = datetime.datetime.fromisoformat(timestamp)
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
@@ -4906,7 +4906,7 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
                 first = msgs[0] or {}
                 ts_fallback = first.get('timestamp_gmt8') or first.get('timestamp')
             if ts_fallback:
-                tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(ts_fallback)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=datetime.timezone.utc)
@@ -5071,7 +5071,7 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
             actual_index = start_idx + i
             
             try:
-                tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                tz8 = datetime.timezone(datetime.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
                 # 若无 tzinfo（旧数据），视为 UTC 再转 GMT+8
                 if dt.tzinfo is None:
@@ -5081,8 +5081,53 @@ async def show_detailed_list(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 now8 = datetime.datetime.now(tz8)
                 minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
             except Exception:
-                time_str = (timestamp[:16] if isinstance(timestamp, str) else '未知时间')
-                minutes_ago = 0
+                # 回退1：尝试直接解析批次 timestamp 的常见格式（含 'Z' 或无秒）
+                parsed = False
+                if isinstance(timestamp, str):
+                    try:
+                        ts_try = timestamp.strip()
+                        if ts_try.endswith('Z'):
+                            ts_try = ts_try[:-1] + '+00:00'
+                        try:
+                            dt = datetime.datetime.fromisoformat(ts_try)
+                        except Exception:
+                            try:
+                                dt = datetime.datetime.strptime(ts_try, '%Y-%m-%dT%H:%M')
+                            except Exception:
+                                dt = None
+                        if dt is not None:
+                            tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                            dt8 = dt.astimezone(tz8)
+                            time_str = dt8.strftime('%m-%d %H:%M')
+                            now8 = datetime.datetime.now(tz8)
+                            minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
+                            parsed = True
+                    except Exception:
+                        parsed = False
+                # 回退2：用批次内第一条消息的 timestamp_gmt8/timestamp 计算
+                if not parsed:
+                    try:
+                        ts_fallback = None
+                        if msgs:
+                            first = msgs[0] or {}
+                            ts_fallback = first.get('timestamp_gmt8') or first.get('timestamp')
+                        if ts_fallback:
+                            tz8 = datetime.timezone(datetime.timedelta(hours=8))
+                            dt = datetime.datetime.fromisoformat(ts_fallback)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=datetime.timezone.utc)
+                            dt8 = dt.astimezone(tz8)
+                            time_str = dt8.strftime('%m-%d %H:%M')
+                            now8 = datetime.datetime.now(tz8)
+                            minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
+                            parsed = True
+                    except Exception:
+                        parsed = False
+                if not parsed:
+                    time_str = (timestamp[:16] if isinstance(timestamp, str) else '未知时间')
+                    minutes_ago = 0
             
             # 诊断：输出本批次的示例消息，便于确认 message 对象里是否包含 user_id / sender_user_id
             try:
