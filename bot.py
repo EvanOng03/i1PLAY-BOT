@@ -4764,13 +4764,31 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
                 tz8 = _dt.timezone(_dt.timedelta(hours=8))
                 dt = datetime.datetime.fromisoformat(timestamp)
                 if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=tz8)
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
                 dt8 = dt.astimezone(tz8)
                 now8 = datetime.datetime.now(tz8)
                 minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
                 time_str = f"{minutes_ago}分钟前"
             except Exception:
-                time_str = "未知时间"
+                # 回退：优先使用批次内第一条消息的 timestamp_gmt8，其次使用 timestamp
+                try:
+                    ts_fallback = None
+                    if msgs:
+                        first = msgs[0] or {}
+                        ts_fallback = first.get('timestamp_gmt8') or first.get('timestamp')
+                    if ts_fallback:
+                        tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                        dt = datetime.datetime.fromisoformat(ts_fallback)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=datetime.timezone.utc)
+                        dt8 = dt.astimezone(tz8)
+                        now8 = datetime.datetime.now(tz8)
+                        minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
+                        time_str = f"{minutes_ago}分钟前"
+                    else:
+                        time_str = "未知时间"
+                except Exception:
+                    time_str = "未知时间"
             
             # 统计群组数量
             group_count = len(set(msg['chat_id'] for msg in msgs))
@@ -4875,13 +4893,31 @@ async def show_group_selection(update: Update, context: ContextTypes.DEFAULT_TYP
         tz8 = _dt.timezone(_dt.timedelta(hours=8))
         dt = datetime.datetime.fromisoformat(timestamp)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=tz8)
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
         dt8 = dt.astimezone(tz8)
         now8 = datetime.datetime.now(tz8)
         minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
         time_str = f"{minutes_ago}分钟前"
     except Exception:
-        time_str = "未知时间"
+        # 回退：优先使用批次内第一条消息的 timestamp_gmt8，其次使用 timestamp
+        try:
+            ts_fallback = None
+            if msgs:
+                first = msgs[0] or {}
+                ts_fallback = first.get('timestamp_gmt8') or first.get('timestamp')
+            if ts_fallback:
+                tz8 = _dt.timezone(_dt.timedelta(hours=8))
+                dt = datetime.datetime.fromisoformat(ts_fallback)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
+                dt8 = dt.astimezone(tz8)
+                now8 = datetime.datetime.now(tz8)
+                minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
+                time_str = f"{minutes_ago}分钟前"
+            else:
+                time_str = "未知时间"
+        except Exception:
+            time_str = "未知时间"
     
     text = f'🎯 **选择要删除的群组** ({time_str})\n\n'
     text += f'共 {total_groups} 个群组（第{page + 1}页，每页{items_per_page}项）：\n\n'
