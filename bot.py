@@ -3017,30 +3017,44 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             im = Image.new("RGB", (width, height), BG)
             draw = ImageDraw.Draw(im)
 
-            def try_font(paths, size):
+            import os
+            def try_font(paths, size, label="font"):
                 for p in paths:
                     try:
-                        return ImageFont.truetype(p, size)
+                        if not p:
+                            continue
+                        if os.path.exists(p):
+                            f = ImageFont.truetype(p, size)
+                            logger.info(f"/status image: using {label} -> {p}")
+                            return f
                     except Exception:
                         continue
+                logger.warning(f"/status image: {label} fallback to default bitmap font (may not support CJK/emoji)")
                 return ImageFont.load_default()
 
             cn_fonts = [
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
                 r"C:\\Windows\\Fonts\\msyh.ttc",
                 r"C:\\Windows\\Fonts\\Microsoft YaHei UI.ttf",
                 r"C:\\Windows\\Fonts\\SimHei.ttf",
                 r"C:\\Windows\\Fonts\\Arial.ttf",
             ]
-            title_font = try_font(cn_fonts, 40)
-            section_font = try_font(cn_fonts, 28)
-            label_font = try_font(cn_fonts, 22)
-            value_font = try_font(cn_fonts, 44)
+            title_font = try_font(cn_fonts, 40, label="title_font")
+            section_font = try_font(cn_fonts, 28, label="section_font")
+            label_font = try_font(cn_fonts, 22, label="label_font")
+            value_font = try_font(cn_fonts, 44, label="value_font")
 
             emoji_fonts = [
+                "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+                "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",
                 r"C:\\Windows\\Fonts\\seguiemj.ttf",
                 r"C:\\Windows\\Fonts\\Segoe UI Emoji.ttf",
             ]
-            emoji_font = try_font(emoji_fonts, 40)
+            emoji_font = try_font(emoji_fonts, 40, label="emoji_font")
 
             # 标题（表情与文字分开绘制，避免方块）
             title_x, title_y = 40, 30
