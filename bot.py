@@ -4831,21 +4831,24 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
         )
         # 后台快扫完成后，自动删除首次秒开的菜单，保留刷新后的菜单
         try:
-            scanned_done = 'auto_prune_scanned_count' in context.user_data
-            if not scanned_done:
+            # 1) 先记录首次发送的菜单 message_id（仅一次）
+            initial = context.user_data.get('initial_delete_menu')
+            if not initial:
                 context.user_data['initial_delete_menu'] = {
                     'chat_id': sent.chat.id,
                     'message_id': sent.message_id
                 }
-            else:
-                initial = context.user_data.pop('initial_delete_menu', None)
-                if initial:
+                initial = context.user_data['initial_delete_menu']
+            # 2) 当后台扫描完成后，再触发删除首次菜单（与当前刷新菜单区分开）
+            if 'auto_prune_scanned_count' in context.user_data:
+                to_delete = context.user_data.pop('initial_delete_menu', None)
+                if to_delete and (to_delete['chat_id'] != sent.chat.id or to_delete['message_id'] != sent.message_id):
                     async def _delete_initial_menu():
                         try:
                             await asyncio.sleep(3)
                             await context.bot.delete_message(
-                                chat_id=initial['chat_id'],
-                                message_id=initial['message_id']
+                                chat_id=to_delete['chat_id'],
+                                message_id=to_delete['message_id']
                             )
                         except Exception as e:
                             logger.error(f"自动删除初始菜单失败: {e}")
