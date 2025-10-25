@@ -458,7 +458,11 @@ def _save_user_messages_sharded(user_id: int, messages: list) -> bool:
                 else:
                     merged_map[k] = m
             merged = list(merged_map.values())
-            logger.info(f"_save_user_messages_sharded: merge user={user_id} before={len(existing)} add={len(messages or [])} after={len(merged)}")
+            before_count = len(existing)
+            add_count = len(messages or [])
+            after_count = len(merged)
+            effective_added = max(0, after_count - before_count)
+            logger.info(f"_save_user_messages_sharded: merge user={user_id} before原={before_count} add条={add_count} after后={after_count} effective_added总={effective_added}")
         except Exception as me:
             logger.warning(f"_save_user_messages_sharded: merge failed for user={user_id}: {me}")
             merged = messages or []
