@@ -4765,7 +4765,7 @@ async def show_delete_main_menu(update: Update, context: ContextTypes.DEFAULT_TY
                 dt = datetime.datetime.fromisoformat(timestamp)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=datetime.timezone.utc)
-                dt8 = dt.astimezone(tz8)\r
+                dt8 = dt.astimezone(tz8)
                 now8 = datetime.datetime.now(tz8)
                 minutes_ago = max(0, int((now8 - dt8).total_seconds() / 60))
                 time_str = f"{minutes_ago}分钟前"
