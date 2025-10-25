@@ -1086,6 +1086,37 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # 帮助命令
 @require_permission
+async def reset_sent_messages_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text("用法：/reset_sent_messages <user_id>")
+            return
+        uid = int(args[0])
+    except Exception:
+        await update.message.reply_text("参数错误：请输入用户ID")
+        return
+    # 清空内存
+    try:
+        global user_sent_messages
+        user_sent_messages[uid] = []
+    except Exception:
+        pass
+    # 删除远端所有该用户文档
+    try:
+        from db import delete_document, delete_docs_with_prefix
+        delete_document(f"sent_messages_{uid}")
+        delete_docs_with_prefix(f"sent_messages_{uid}_part_")
+    except Exception as e:
+        logger.error(f"reset_sent_messages_cmd: remote delete failed: {e}")
+    # 写入本地副本（空）
+    try:
+        save_sent_messages(user_sent_messages)
+    except Exception:
+        pass
+    await update.message.reply_text(f"已重置用户 {uid} 的发送记录（内存+远端）")
+
+@require_permission
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = """
 🔧 **可用命令：**
@@ -7143,6 +7174,7 @@ async def main():
     # 添加命令处理器
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("reset_sent_messages", reset_sent_messages_cmd))
     application.add_handler(CommandHandler("listgroups", list_groups))
     application.add_handler(CommandHandler("addgroup", add_group))
     application.add_handler(CommandHandler("listcategories", list_categories))
