@@ -428,24 +428,56 @@ def _save_user_messages_sharded(user_id: int, messages: list) -> bool:
     """Store per-user sent messages into Firestore using sharding when needed.
     Adds diagnostic logging of payload size and written document ids.
     Returns True when all writes succeeded.
+    Merge with existing remote data to avoid accidental overwrite/shrink.
     """
     try:
         import json as _json
+        # 合并远端已存在数据，避免“只写入最近一条”导致历史被覆盖
+        try:
+            existing_all = load_json_sharded('sent_messages') or {}
+            existing = None
+            # 兼容字符串/整数键
+            if isinstance(existing_all, dict):
+                existing = existing_all.get(str(user_id)) or existing_all.get(user_id) or []
+            if not isinstance(existing, list):
+                existing = []
+            # 去重合并：以 (chat_id, message_id) 作为键，保留较早/较完整的记录（包含 timestamp_gmt8）
+            def _key(m):
+                return (m.get('chat_id'), m.get('message_id'))
+            merged_map = {}
+            for m in existing:
+                merged_map[_key(m)] = m
+            for m in (messages or []):
+                k = _key(m)
+                if k in merged_map:
+                    # 合并缺失字段，如 timestamp_gmt8 / sender_user_id
+                    base = merged_map[k]
+                    for kk, vv in m.items():
+                        if base.get(kk) is None and vv is not None:
+                            base[kk] = vv
+                else:
+                    merged_map[k] = m
+            merged = list(merged_map.values())
+            logger.info(f"_save_user_messages_sharded: merge user={user_id} before={len(existing)} add={len(messages or [])} after={len(merged)}")
+        except Exception as me:
+            logger.warning(f"_save_user_messages_sharded: merge failed for user={user_id}: {me}")
+            merged = messages or []
+
         base_id = f"sent_messages_{user_id}"
-        blob = _json.dumps(messages, ensure_ascii=False)
+        blob = _json.dumps(merged, ensure_ascii=False)
         payload_bytes = len(blob.encode('utf-8'))
-        logger.debug(f"_save_user_messages_sharded: user={user_id} payload_bytes={payload_bytes} items={len(messages)}")
+        logger.debug(f"_save_user_messages_sharded: user={user_id} payload_bytes={payload_bytes} items={len(merged)}")
         # 约束：单文档控制在 ~900KB 以内
         if payload_bytes <= 900_000:
-            ok = save_json(base_id, messages)
+            ok = save_json(base_id, merged)
             logger.info(f"_save_user_messages_sharded: wrote single doc {base_id} -> {bool(ok)}")
             return bool(ok)
         # 分片写入（每块500条，可按需调整）
         chunk_size = 500
         all_ok = True
         written_parts = []
-        for idx in range(0, len(messages), chunk_size):
-            part = messages[idx: idx + chunk_size]
+        for idx in range(0, len(merged), chunk_size):
+            part = merged[idx: idx + chunk_size]
             part_id = f"{base_id}_part_{idx // chunk_size:04d}"
             ok = save_json(part_id, part)
             written_parts.append((part_id, bool(ok)))
